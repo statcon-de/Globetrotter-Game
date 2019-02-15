@@ -1,0 +1,158 @@
+/** jmpGlobe
+  * Author: Sebastian Hoffmeister (STATCON)
+  * Version 1.0 - 12.21.2011
+  * 
+  * Coordinates from: http://www.nobochamp.com/capitals.htm
+  */
+
+
+// TODOS:
+/** 
+  * - Highscore im Internet speichern
+  * - Schwierigkeitsgrad der Städte anhand von Spielerergebnissen ermitteln
+  * - Hintergrundkarte verändern (ohne Ländergrenzen,...)
+  * - Sound
+  */
+
+initialize = Function( {},
+	cities = Current Data Table();
+	::time = 60;
+	::score = 0;
+	::solved = {0};
+	::current = 0;
+	::current = ::nextCity();
+	::start = Today();
+);
+
+// Returns the current city to find. Actually its the corresponding line in the cities data table.
+ :: nextCity = Function( {},
+	::thisCity = ::current;
+	While( Contains( ::solved, ::thisCity ) > 0,
+		If(
+			::score < 100, ::thisCity = Random Integer( 1, N Row() / 5 ),
+			::score < 200 & ::score > 99, ::thisCity = Random Integer( N Row() / 5, N Row() / 5 * 2 ),
+			::score < 300 & ::score > 199, ::thisCity = Random Integer( N Row() / 5 * 2, N Row() / 5 * 3 ),
+			::score < 400 & ::score > 299, ::thisCity = Random Integer( N Row() / 5 * 3, N Row() / 5 * 4 ),
+			::score > 399, ::thisCity = Random Integer( N Row() / 5 * 4, N Row() )
+		)
+	);
+	Insert Into( ::solved, Round( ::thisCity, 0 ) );
+	Round( ::thisCity, 0 );
+);
+
+
+
+// Returns the points for a given distance, city-level
+ :: scoring = Function( {dist, skill},
+	If( ::time > 0,
+		Round( 1000 / (dist / skill), 0 ), // Only points if there is time left
+		0
+	)
+);
+
+// Update the textboxes
+updateGUI = Function( {},
+	::scoreBox << set text( "Points: " || Char( ::score ) );
+	::timeBox << set text( "Time left: " || Char( ::time ) );
+	::cityBox << set text( " Find City: " || :City[::current] || "(" || :Country[::current] || ")" );
+);
+ 
+// Klick: Resolves whenever user left-click inside of the graph
+::Klick = Function( {x, y},
+	If(
+		::time <= 0,
+			New Window( "Results",
+				<<modal,
+				V List Box(
+					Lineup Box(
+						3,
+						Text Box( "Time is over!" ),
+						Text Box( " You made " || Char( ::score ) || " points." )/*,
+						Button Box( "Send Highscore",
+							Mail(
+								"basti.hoffmeister@gmx.de",
+								"JMP Globetrotter Results",
+								"Score = " || Char( ::score )
+							)
+						)*/
+					)
+				)
+			)
+			
+	,
+		::time > 0, 
+	// Show correct solution
+			solution = {};
+			Insert Into( solution, :X[::current] );
+			Insert Into( solution, :Y[::current] );
+			::g[FrameBox( 1 )] << Add Graphics Script(
+				Marker Size( 3 );
+				Marker( Combine States( Marker State( 12 ), Color State( "white" ) ), solution );
+			);
+	// Show clicked position
+			clicked = {};
+			Insert Into( clicked, x );
+			Insert Into( clicked, y );
+			::g[FrameBox( 1 )] << Add Graphics Script(
+				Marker Size( 3 );
+				Marker( Combine States( Marker State( 12 ), Color State( "Red" ) ), clicked );
+			);
+	// Draw an arrow from the clicked point to the right solution
+			 :: g[FrameBox( 1 )] << Add Graphics Script(
+				Pen Color( "white" );
+				Arrow( 10, clicked, solution );
+			);
+	// Calculate distance between city and users guess
+			::dist = Sqrt( (71.5 * (:X[::current] - x)) ^ 2 + (111.3 * (:Y[::current] - y)) ^ 2 ); // Simplified method for calculating the distance in km.
+	
+			// Update Score and time
+			::thisscore = ::scoring( ::dist, :Level[::current] );
+			::score = ::score + ::thisscore;
+			::time = ::time - (Today() - ::start); 
+			
+			New Window( "Results",
+				<<modal, //User Dialog: Display distance, score and time
+				V List Box(
+					Lineup Box(
+						2,
+						Text Box( "Distance: " ), // Distance
+						Text Box( Char( Round( ::dist, 3 ) ) ),
+						Text Box( "Score: " ), // Score for this turn
+						Text Box( Char( ::thisscore ) ),
+						Text Box( "Time Left: " ), // time left
+						Text Box( Char( ::time ) )
+					)
+				)
+			);
+			::current = ::nextCity(); // get next city
+			updateGUI(); // Update score, time and city
+			::start = Today(); // start counting the time until next mouseclick
+	)
+);
+
+
+initialize();
+// creating the playing graph
+mainGUI = New Window( "jmpGlobe",
+	Lineup Box( N Col( 5 ), Spacing( 10 ),
+		Button Box( "New Game",
+			initialize();
+			updateGUI();
+		),
+		::scoreBox = Text Box( "Points: " || Char( ::score ) ),
+		::timeBox = Text Box( "Time left: " || Char( ::time ) ),
+		::cityBox = Text Box( " Find City: " || :City[::current] || "(" || :Country[::current] || ")" ), 
+
+	),
+	::g = Graph Box(
+		FrameSize( 1024, 600 ),
+		XAxis( Min( -185 ), Max( 185 ), ShowMajorTicks( 0 ), ShowLabels( 0 ) ),
+		YAxis( Min( -80 ), Max( 80 ), ShowMajorTicks( 0 ), ShowLabels( 0 ) ),
+		XName( "" ),
+		YName( "" ),
+		DoubleBuffer,
+		<<Background Map( Boundaries( "World Countries" ), Images( "Simple Earth" ) ),
+		Mousetrap( ::Klick( x, y ), {} )
+	),
+	Button Box( "Script by Sebastian Hoffmeister (Statcon)", Web( "www.statcon.de" ) )
+);
